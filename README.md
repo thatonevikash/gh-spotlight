@@ -1,6 +1,6 @@
 ﻿# gh-spotlight
 
-Generate GitHub profile and statistics cards as crisp, 1200 × 640 PNGs. Built with Next.js App Router, strict TypeScript, Primer colors and Octicons, Satori, and resvg. No browser is used for image generation.
+Generate GitHub profile and statistics cards as crisp, 1200 × 640 PNGs, or 1200 × 880 with streak stats enabled. Built with Next.js App Router, strict TypeScript, Primer colors and Octicons, Satori, and resvg. No browser is used for image generation.
 
 ## Run locally
 
@@ -36,10 +36,11 @@ GET /api/card?user=octocat&theme=dark
 | `theme`   | `light`  | `light`, `dark`, `dark_dimmed`, `light_high_contrast`, `dark_high_contrast` |
 | `hide`    | Empty    | Comma-separated `bio`, `languages`                                          |
 | `border`  | `true`   | `true`, `false`                                                             |
+| `streak`  | `false`  | `true` adds current streak, longest streak, and all-time contributions       |
 | `radius`  | `8`      | Integer 0–32, in logical pixels                                             |
 | `demo`    | `false`  | `true` renders labeled fixed sample data without GitHub access              |
 
-Unknown parameters and invalid values return JSON with status 400. Success returns `image/png` at 1200 × 640 (600 × 320 logical pixels), with:
+Unknown parameters and invalid values return JSON with status 400. Success returns `image/png` at 1200 × 640 (600 × 320 logical pixels), or 1200 × 880 (600 × 440 logical pixels) with `streak=true`, with:
 
 ```text
 Cache-Control: public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400
@@ -75,6 +76,22 @@ Bundled previews use labeled sample data. Regenerate them with `npm run previews
 ![Dark high contrast](public/previews/dark_high_contrast.png)
 
 The first three token maps match the project brief. High-contrast tokens are sourced from `@primer/primitives@11.10.0` functional themes. See [Primer primitives](https://primer.style/product/primitives/). This is an independent project, not a GitHub product.
+
+## Contribution streaks
+
+Enable **Show streak stats** in the playground, or append `&streak=true` to an image URL:
+
+```text
+GET /api/card?user=octocat&theme=dark&streak=true
+```
+
+![Dark card with contribution streaks](public/previews/dark-streak.png)
+
+The expanded card keeps the existing profile, metrics, and languages and adds a theme-aware contribution panel. Current streak is highlighted alongside the longest streak, date ranges, and total contributions. HTML embeds use height `440` when enabled.
+
+A streak counts consecutive UTC calendar dates with at least one contribution. An unfinished today does not break a run ending yesterday. Longest streak and total contributions use all contribution years reported by GitHub, including runs across year boundaries. Ties keep the earliest longest streak. Empty activity shows zero and an invitation to start a streak. Counts reflect the contribution calendar available to the server token, including restricted counts when GitHub exposes them; they are not limited to commits.
+
+Streaks are off by default. Enabling them adds one calendar request per contribution year (plus the current year if absent), separate from repository pagination. A failed history request returns an error card rather than partial streak totals. Live data still requires `GITHUB_TOKEN`; sample streaks are fixed and explicitly labeled. GitHub documents the underlying fields in its [GraphQL contribution calendar reference](https://docs.github.com/en/graphql/reference/users#contributioncalendar).
 
 ## Data semantics
 

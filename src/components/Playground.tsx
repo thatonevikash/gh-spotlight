@@ -24,6 +24,7 @@ export default function Playground() {
     theme: options.theme,
     border: String(options.border),
     radius: String(options.radius),
+    streak: String(options.streak),
   });
   if (options.hide) params.set("hide", options.hide);
   const livePath = `/api/card?${params}`;
@@ -34,7 +35,7 @@ export default function Playground() {
     tab === "markdown"
       ? `![GitHub Stats](${publicUrl})`
       : tab === "html"
-        ? `<img src="${publicUrl.replaceAll("&", "&amp;")}" alt="GitHub Stats" width="600" height="320" />`
+        ? `<img src="${publicUrl.replaceAll("&", "&amp;")}" alt="GitHub Stats" width="600" height="${options.streak ? 440 : 320}" />`
         : publicUrl;
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -212,6 +213,17 @@ export default function Playground() {
             </fieldset>
             <div className="options-block">
               <h3>Fine-tune</h3>
+              <label className="toggle-row" htmlFor="streak">
+                Show streak stats
+                <input
+                  id="streak"
+                  type="checkbox"
+                  role="switch"
+                  checked={options.streak}
+                  onChange={(e) => update({ streak: String(e.target.checked) })}
+                />
+              </label>
+              <p className="field-help">Current run, personal best, and all-time contributions.</p>
               <label className="toggle-row" htmlFor="border">
                 Show border
                 <input
@@ -276,16 +288,16 @@ export default function Playground() {
                   {demo ? "Sample data" : `@${options.user}`}
                 </span>
               </div>
-              <span className="resolution">1200 × 640 PNG</span>
+              <span className="resolution">1200 × {options.streak ? 880 : 640} PNG</span>
             </div>
             <div className="preview-canvas">
-              <div className="card-stage" aria-busy={loading}>
+              <div className="card-stage" aria-busy={loading} style={{ aspectRatio: options.streak ? "600 / 440" : "600 / 320" }}>
                 <img
                   key={imagePath}
                   src={imagePath}
                   alt={`${demo ? "Sample " : ""}GitHub statistics for ${options.user}`}
                   width="600"
-                  height="320"
+                  height={options.streak ? 440 : 320}
                   onLoad={() => setLoading(false)}
                   onError={() => {
                     setLoading(false);

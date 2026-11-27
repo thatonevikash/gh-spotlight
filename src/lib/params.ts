@@ -31,6 +31,10 @@ export const cardSchema = z
       .enum(["true", "false"])
       .default("true")
       .transform((v) => v === "true"),
+    streak: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((v) => v === "true"),
     radius: z.coerce.number().int().min(0).max(32).default(8),
     demo: z
       .enum(["true", "false"])
