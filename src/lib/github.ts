@@ -1,4 +1,5 @@
 import "server-only";
+import { calculateStreaks, type ContributionDay, type StreakStats } from "./streaks";
 export interface Language {
   name: string;
   color: string;
@@ -18,6 +19,7 @@ export interface Profile {
   contributions: number;
   repositories: number;
   languages: Language[];
+  streaks?: StreakStats;
 }
 export class GitHubError extends Error {
   constructor(
@@ -43,6 +45,7 @@ interface UserNode {
   pullRequests: { totalCount: number };
   issues: { totalCount: number };
   contributionsCollection: {
+    contributionYears?: number[];
     totalCommitContributions: number;
     contributionCalendar: { totalContributions: number };
   };
@@ -52,15 +55,64 @@ interface UserNode {
     nodes: Repository[];
   };
 }
-const query = `query Spotlight($login: String!, $after: String, $from: DateTime!, $to: DateTime!) {
+const query = `query Spotlight($login: String!, $after: String, $from: DateTime!, $to: DateTime!, $streak: Boolean!) {
  user(login: $login) {
  name login bio avatarUrl status { message } followers { totalCount } pullRequests { totalCount } issues { totalCount }
- contributionsCollection(from: $from, to: $to) { totalCommitContributions contributionCalendar { totalContributions } }
+ contributionsCollection(from: $from, to: $to) { contributionYears @include(if: $streak) totalCommitContributions contributionCalendar { totalContributions } }
  repositories(first: 100, after: $after, ownerAffiliations: OWNER, privacy: PUBLIC, isFork: false) {
  totalCount pageInfo { hasNextPage endCursor }
  nodes { stargazerCount languages(first: 10, orderBy: {field: SIZE, direction: DESC}) { edges { size node { name color } } } }
  } } }`;
-export async function fetchProfile(login: string): Promise<Profile> {
+async function graphql<T>(query: string, variables: Record<string, unknown>, token: string): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch("https://api.github.com/graphql", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query, variables }),
+      signal: AbortSignal.timeout(15000),
+      cache: "no-store",
+    });
+  } catch {
+    throw new GitHubError("GitHub is temporarily unavailable. Try again shortly.", 502);
+  }
+  if (response.status === 429 || (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0"))
+    throw new GitHubError("GitHub rate limit reached. Try again later.", 429);
+  if (!response.ok)
+    throw new GitHubError(response.status === 401 ? "The server GitHub token needs attention." : "GitHub is temporarily unavailable.", 502);
+  const result = await response.json() as { data?: T; errors?: { type?: string }[] };
+  if (result.errors?.some((e) => e.type === "RATE_LIMITED"))
+    throw new GitHubError("GitHub rate limit reached. Try again later.", 429);
+  if (result.errors?.some((e) => e.type === "NOT_FOUND"))
+    throw new GitHubError(`No GitHub profile found for @${variables.login}.`, 404);
+  if (result.errors?.length || !result.data)
+    throw new GitHubError("Unable to load this GitHub profile.", 502);
+  return result.data;
+}
+
+async function fetchStreaks(login: string, years: number[], token: string, now: Date): Promise<StreakStats> {
+  const days: ContributionDay[] = [];
+  const historyQuery = `query StreakHistory($login: String!, $from: DateTime!, $to: DateTime!) {
+    user(login: $login) { contributionsCollection(from: $from, to: $to) {
+      contributionCalendar { weeks { contributionDays { date contributionCount } } }
+    } }
+  }`;
+  // One bounded calendar per request, independent of repository pagination.
+  for (const year of [...new Set([...years, now.getUTCFullYear()])].sort()) {
+    if (year > now.getUTCFullYear()) continue;
+    const from = `${year}-01-01T00:00:00Z`;
+    const to = year === now.getUTCFullYear() ? now.toISOString() : `${year}-12-31T23:59:59Z`;
+    const data = await graphql<{ user: { contributionsCollection: {
+      contributionCalendar: { weeks: { contributionDays: ContributionDay[] }[] };
+    } } | null }>(historyQuery, { login, from, to }, token);
+    if (!data.user) throw new GitHubError(`No GitHub profile found for @${login}.`, 404);
+    for (const week of data.user.contributionsCollection.contributionCalendar.weeks)
+      days.push(...week.contributionDays.filter((day) => day.date >= from.slice(0, 10) && day.date <= to.slice(0, 10)));
+  }
+  return calculateStreaks(days, now);
+}
+
+export async function fetchProfile(login: string, includeStreak = false): Promise<Profile> {
   const token = process.env.GITHUB_TOKEN;
   if (!token)
     throw new GitHubError("Set GITHUB_TOKEN to generate live cards.", 503);
@@ -70,54 +122,11 @@ export async function fetchProfile(login: string): Promise<Profile> {
   let user: UserNode | null = null;
   const repos: Repository[] = [];
   do {
-    let response: Response;
-    try {
-      response = await fetch("https://api.github.com/graphql", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query,
-          variables: { login, after, from, to: now.toISOString() },
-        }),
-        signal: AbortSignal.timeout(15000),
-        cache: "no-store",
-      });
-    } catch {
-      throw new GitHubError(
-        "GitHub is temporarily unavailable. Try again shortly.",
-        502,
-      );
-    }
-    if (
-      response.status === 429 ||
-      (response.status === 403 &&
-        response.headers.get("x-ratelimit-remaining") === "0")
-    )
-      throw new GitHubError("GitHub rate limit reached. Try again later.", 429);
-    if (!response.ok)
-      throw new GitHubError(
-        response.status === 401
-          ? "The server GitHub token needs attention."
-          : "GitHub is temporarily unavailable.",
-        502,
-      );
-    const result = (await response.json()) as {
-      data?: { user: UserNode | null };
-      errors?: { type?: string; message: string }[];
-    };
-    if (result.errors?.some((e) => e.type === "RATE_LIMITED"))
-      throw new GitHubError("GitHub rate limit reached. Try again later.", 429);
-    if (
-      result.errors?.some((e) => e.type === "NOT_FOUND") ||
-      (result.data && !result.data.user)
-    )
-      throw new GitHubError(`No GitHub profile found for @${login}.`, 404);
-    if (result.errors?.length || !result.data?.user)
-      throw new GitHubError("Unable to load this GitHub profile.", 502);
-    user = result.data.user;
+    const data: { user: UserNode | null } = await graphql<{ user: UserNode | null }>(query, {
+      login, after, from, to: now.toISOString(), streak: includeStreak,
+    }, token);
+    if (!data.user) throw new GitHubError(`No GitHub profile found for @${login}.`, 404);
+    user = data.user;
     repos.push(...user.repositories.nodes);
     after = user.repositories.pageInfo.hasNextPage
       ? user.repositories.pageInfo.endCursor
@@ -176,6 +185,9 @@ export async function fetchProfile(login: string): Promise<Profile> {
     contributions:
       user.contributionsCollection.contributionCalendar.totalContributions,
     repositories: user.repositories.totalCount,
+    streaks: includeStreak
+      ? await fetchStreaks(login, user.contributionsCollection.contributionYears || [], token, now)
+      : undefined,
     languages: [...languageMap.values()]
       .sort((a, b) => b.size - a.size)
       .slice(0, 5),
@@ -194,6 +206,13 @@ export const demoProfile: Profile = {
   followers: 3240,
   contributions: 1246,
   repositories: 32,
+  streaks: {
+    total: 4954,
+    firstContribution: "2023-09-30",
+    through: "2026-11-27",
+    current: { days: 42, start: "2026-10-17", end: "2026-11-27" },
+    longest: { days: 128, start: "2025-06-01", end: "2025-10-06" },
+  },
   languages: [
     { name: "TypeScript", color: "#3178c6", size: 48 },
     { name: "JavaScript", color: "#f1e05a", size: 28 },

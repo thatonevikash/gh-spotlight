@@ -6,7 +6,7 @@ import {
   HighlightCard,
   ErrorCard,
   CARD_WIDTH,
-  CARD_HEIGHT,
+  cardHeight,
 } from "@/components/card/HighlightCard";
 import { cardSchema } from "@/lib/params";
 import { demoProfile, fetchProfile, GitHubError } from "@/lib/github";
@@ -33,7 +33,7 @@ export async function GET(request: Request) {
   let errorStatus = 0;
   let profile = demoProfile;
   try {
-    profile = options.demo ? demoProfile : await fetchProfile(options.user);
+    profile = options.demo ? demoProfile : await fetchProfile(options.user, options.streak);
   } catch (error) {
     errorStatus = error instanceof GitHubError ? error.status : 500;
     message =
@@ -51,7 +51,7 @@ export async function GET(request: Request) {
       ),
       {
         width: CARD_WIDTH,
-        height: CARD_HEIGHT,
+        height: cardHeight(options.streak),
         fonts: [
           { name: "Inter", data: inter, weight: 400, style: "normal" },
           { name: "Inter", data: semibold, weight: 600, style: "normal" },

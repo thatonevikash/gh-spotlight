@@ -1,9 +1,11 @@
 import type { Profile } from "@/lib/github";
 import type { CardOptions } from "@/lib/params";
 import { resolveTheme } from "@/lib/primer-themes";
+import { StreakSection } from "./StreakSection";
 import { Icon } from "../Icon";
 export const CARD_WIDTH = 600;
 export const CARD_HEIGHT = 320;
+export const cardHeight = (streak: boolean) => streak ? 440 : CARD_HEIGHT;
 export function HighlightCard({
   profile: p,
   options: o,
@@ -29,7 +31,7 @@ export function HighlightCard({
         flexDirection: "column",
         boxSizing: "border-box",
         width: CARD_WIDTH,
-        height: CARD_HEIGHT,
+        height: cardHeight(o.streak),
         backgroundColor: t.bgDefault,
         color: t.fgDefault,
         border: o.border ? `1px solid ${t.borderDefault}` : undefined,
@@ -186,6 +188,7 @@ export function HighlightCard({
           </div>
         </div>
       )}
+      {o.streak && p.streaks && <StreakSection stats={p.streaks} theme={t} />}
       <div
         style={{
           display: "flex",
@@ -221,7 +224,7 @@ export function ErrorCard({
         gap: 18,
         boxSizing: "border-box",
         width: CARD_WIDTH,
-        height: CARD_HEIGHT,
+        height: cardHeight(options.streak),
         padding: 32,
         fontFamily: "Inter",
         background: t.bgDefault,

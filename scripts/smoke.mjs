@@ -12,31 +12,34 @@ for (const theme of [
   "light_high_contrast",
   "dark_high_contrast",
 ]) {
-  const response = await fetch(
-    `${origin}/api/card?user=octocat&theme=${theme}&demo=true`,
-  );
-  const bytes = Buffer.from(await response.arrayBuffer());
-  assert.equal(
-    response.status,
-    200,
-    `${theme}: ${bytes.toString().slice(0, 150)}`,
-  );
-  assert.equal(response.headers.get("content-type"), "image/png");
-  assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
-  assert.equal(bytes.readUInt32BE(16), 1200);
-  assert.equal(bytes.readUInt32BE(20), 640);
-  assert.equal(
-    response.headers.get("cache-control"),
-    "public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400",
-  );
-  await writeFile(`artifacts/${theme}.png`, bytes);
-  console.log(`PASS ${theme}: 1200x640 PNG, ${bytes.length} bytes`);
+  for (const streak of [false, true]) {
+    const response = await fetch(
+      `${origin}/api/card?user=octocat&theme=${theme}&demo=true&streak=${streak}`,
+    );
+    const bytes = Buffer.from(await response.arrayBuffer());
+    assert.equal(
+      response.status,
+      200,
+      `${theme}: ${bytes.toString().slice(0, 150)}`,
+    );
+    assert.equal(response.headers.get("content-type"), "image/png");
+    assert.equal(bytes.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+    assert.equal(bytes.readUInt32BE(16), 1200);
+    assert.equal(bytes.readUInt32BE(20), streak ? 880 : 640);
+    assert.equal(
+      response.headers.get("cache-control"),
+      "public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400",
+    );
+    await writeFile(`artifacts/${theme}${streak ? "-streak" : ""}.png`, bytes);
+    console.log(`PASS ${theme}: 1200x${streak ? 880 : 640} PNG, ${bytes.length} bytes`);
+  }
 }
 for (const suffix of [
   "",
   "?user=bad!",
   "?user=octocat&radius=100",
   "?user=octocat&theme=bad",
+  "?user=octocat&streak=bad",
 ]) {
   const r = await fetch(`${origin}/api/card${suffix}`);
   assert.equal(r.status, 400);
